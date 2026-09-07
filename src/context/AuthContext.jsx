@@ -161,7 +161,7 @@ export const AuthProvider = ({ children }) => {
     try {
       setLoading(true);
 
-      // Step A: Ensure profile exists in public.profiles table first (Foreign Key Safety)
+      // Step A: Ensure profile exists in public.profiles table first
       const { data: existingProf } = await supabase.from('profiles').select('id').eq('id', user.id).single();
       if (!existingProf) {
         await supabase.from('profiles').upsert({
@@ -171,15 +171,17 @@ export const AuthProvider = ({ children }) => {
         });
       }
 
+      // Generate v4 UUID for household so RLS SELECT timing never blocks insertion
+      const householdId = crypto.randomUUID();
+
       // Step B: Insert household
-      const { data: newHH, error: hhErr } = await supabase
+      const { error: hhErr } = await supabase
         .from('households')
         .insert({
+          id: householdId,
           name: householdName,
           owner_id: user.id,
-        })
-        .select()
-        .single();
+        });
 
       if (hhErr) throw hhErr;
 
@@ -187,37 +189,46 @@ export const AuthProvider = ({ children }) => {
       const { error: memErr } = await supabase
         .from('household_members')
         .insert({
-          household_id: newHH.id,
+          household_id: householdId,
           user_id: user.id,
           role: 'owner',
         });
 
       if (memErr) throw memErr;
 
-      // Step D: Seed default household categories (strip mock non-UUID 'id' fields)
+      // Step D: Seed default household categories
       const categoriesToInsert = DEFAULT_CATEGORIES.map(cat => ({
-        household_id: newHH.id,
+        household_id: householdId,
         name: cat.name,
         icon: cat.icon || 'Tag',
         sort_order: cat.sort_order || 1,
         is_active: true,
       }));
-
       await supabase.from('categories').insert(categoriesToInsert);
 
       // Step E: Seed default household payment modes
       const paymentModesToInsert = DEFAULT_PAYMENT_MODES.map(pm => ({
-        household_id: newHH.id,
+        household_id: householdId,
         name: pm.name,
         sort_order: pm.sort_order || 1,
         is_active: true,
       }));
-
       await supabase.from('payment_modes').insert(paymentModesToInsert);
 
-      // Refresh user household context
+      const createdHH = {
+        id: householdId,
+        name: householdName,
+        owner_id: user.id,
+        created_at: new Date().toISOString(),
+      };
+
+      // Set active household & owner role directly in local state for instant transition
+      setHousehold(createdHH);
+      setUserRole('owner');
+
+      // Refresh background user context
       await loadUserData(user);
-      return { success: true, household: newHH };
+      return { success: true, household: createdHH };
     } catch (err) {
       console.error('Failed to create household:', err);
       return { success: false, error: err.message };
@@ -294,7 +305,7 @@ export const AuthProvider = ({ children }) => {
       setUserRole('owner');
       return { success: true };
     }
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.signInWithPassword({ email, password });
     if (error) return { success: false, error: error.message };
     return { success: true, data };
   };

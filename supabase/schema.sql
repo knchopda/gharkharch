@@ -215,8 +215,9 @@ $$ LANGUAGE sql SECURITY DEFINER;
 CREATE POLICY "Profiles are viewable by authenticated users" ON public.profiles FOR SELECT TO authenticated USING (TRUE);
 CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = id);
 
--- Households Policies
-CREATE POLICY "Members can view household" ON public.households FOR SELECT TO authenticated USING (public.is_household_member(id));
+-- Households Policies (Owner or Member can view)
+DROP POLICY IF EXISTS "Members can view household" ON public.households;
+CREATE POLICY "Members or owner can view household" ON public.households FOR SELECT TO authenticated USING (owner_id = auth.uid() OR public.is_household_member(id));
 CREATE POLICY "Authenticated users can create household" ON public.households FOR INSERT TO authenticated WITH CHECK (owner_id = auth.uid());
 CREATE POLICY "Owner can update household" ON public.households FOR UPDATE TO authenticated USING (owner_id = auth.uid());
 
