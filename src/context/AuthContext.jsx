@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { SAMPLE_USER, SAMPLE_HOUSEHOLD, SAMPLE_MEMBERS, DEFAULT_CATEGORIES } from '../lib/mockData';
+import { SAMPLE_USER, SAMPLE_HOUSEHOLD, SAMPLE_MEMBERS, DEFAULT_CATEGORIES, DEFAULT_PAYMENT_MODES } from '../lib/mockData';
 
 const AuthContext = createContext();
 
@@ -86,15 +86,14 @@ export const AuthProvider = ({ children }) => {
       setLoading(true);
       setUser(authUser);
 
-      // 1. Fetch profile
+      // 1. Fetch or create profile
       let { data: profData, error: profErr } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', authUser.id)
         .single();
 
-      if (profErr && profErr.code === 'PGRST116') {
-        // If profile doesn't exist yet, insert it
+      if (profErr || !profData) {
         const newProf = {
           id: authUser.id,
           full_name: authUser.user_metadata?.full_name || authUser.email.split('@')[0],
@@ -103,7 +102,7 @@ export const AuthProvider = ({ children }) => {
         };
         const { data: insertedProf } = await supabase
           .from('profiles')
-          .insert(newProf)
+          .upsert(newProf)
           .select()
           .single();
         profData = insertedProf || newProf;
@@ -161,7 +160,18 @@ export const AuthProvider = ({ children }) => {
 
     try {
       setLoading(true);
-      // 1. Insert household
+
+      // Step A: Ensure profile exists in public.profiles table first (Foreign Key Safety)
+      const { data: existingProf } = await supabase.from('profiles').select('id').eq('id', user.id).single();
+      if (!existingProf) {
+        await supabase.from('profiles').upsert({
+          id: user.id,
+          full_name: user.user_metadata?.full_name || user.email.split('@')[0],
+          email: user.email,
+        });
+      }
+
+      // Step B: Insert household
       const { data: newHH, error: hhErr } = await supabase
         .from('households')
         .insert({
@@ -173,7 +183,7 @@ export const AuthProvider = ({ children }) => {
 
       if (hhErr) throw hhErr;
 
-      // 2. Add creator as Owner in household_members
+      // Step C: Add creator as Owner in household_members
       const { error: memErr } = await supabase
         .from('household_members')
         .insert({
@@ -184,18 +194,28 @@ export const AuthProvider = ({ children }) => {
 
       if (memErr) throw memErr;
 
-      // 3. Seed default household categories
+      // Step D: Seed default household categories (strip mock non-UUID 'id' fields)
       const categoriesToInsert = DEFAULT_CATEGORIES.map(cat => ({
         household_id: newHH.id,
         name: cat.name,
-        icon: cat.icon,
-        sort_order: cat.sort_order,
+        icon: cat.icon || 'Tag',
+        sort_order: cat.sort_order || 1,
         is_active: true,
       }));
 
       await supabase.from('categories').insert(categoriesToInsert);
 
-      // Refresh state
+      // Step E: Seed default household payment modes
+      const paymentModesToInsert = DEFAULT_PAYMENT_MODES.map(pm => ({
+        household_id: newHH.id,
+        name: pm.name,
+        sort_order: pm.sort_order || 1,
+        is_active: true,
+      }));
+
+      await supabase.from('payment_modes').insert(paymentModesToInsert);
+
+      // Refresh user household context
       await loadUserData(user);
       return { success: true, household: newHH };
     } catch (err) {
@@ -218,7 +238,18 @@ export const AuthProvider = ({ children }) => {
 
     try {
       setLoading(true);
-      // 1. Verify invitation code
+
+      // Ensure profile exists
+      const { data: existingProf } = await supabase.from('profiles').select('id').eq('id', user.id).single();
+      if (!existingProf) {
+        await supabase.from('profiles').upsert({
+          id: user.id,
+          full_name: user.user_metadata?.full_name || user.email.split('@')[0],
+          email: user.email,
+        });
+      }
+
+      // Verify invitation code
       const { data: invite, error: inviteErr } = await supabase
         .from('household_invitations')
         .select('*')
@@ -228,10 +259,10 @@ export const AuthProvider = ({ children }) => {
         .single();
 
       if (inviteErr || !invite) {
-        return { success: false, error: 'Invalid or expired invitation code. Please ask your household Owner for a new code.' };
+        return { success: false, error: 'Invalid or expired invitation code. Ask your household Owner for a new code.' };
       }
 
-      // 2. Add user to household_members as 'member'
+      // Add user to household_members as 'member'
       const { error: joinErr } = await supabase
         .from('household_members')
         .insert({
@@ -244,7 +275,6 @@ export const AuthProvider = ({ children }) => {
         throw joinErr;
       }
 
-      // Refresh state
       await loadUserData(user);
       return { success: true };
     } catch (err) {
