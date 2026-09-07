@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { BookOpen, Home, KeyRound, UserPlus, LogIn, Sparkles, CheckCircle2, ArrowRight } from 'lucide-react';
+import { BookOpen, Home, KeyRound, UserPlus, LogIn, Sparkles, CheckCircle2, ArrowRight, AlertCircle } from 'lucide-react';
 import { isSupabaseConfigured } from '../../lib/supabase';
 
 export const Onboarding = () => {
-  const { user, loginWithEmail, signupWithEmail, createHousehold, joinHouseholdByCode, authError } = useAuth();
+  const { user, loginWithEmail, signupWithEmail, createHousehold, joinHouseholdByCode } = useAuth();
 
   const [authMode, setAuthMode] = useState('signup'); // 'login' | 'signup'
   const [email, setEmail] = useState('');
@@ -31,7 +31,15 @@ export const Onboarding = () => {
         if (!res.success) setErrorMsg(res.error || 'Failed to login');
       } else {
         const res = await signupWithEmail(email, password, fullName);
-        if (!res.success) setErrorMsg(res.error || 'Failed to sign up');
+        if (!res.success) {
+          if (res.error?.includes('rate limit')) {
+            setErrorMsg('Email signup rate limit reached on Supabase. Turn off "Confirm Email" in Supabase Auth Settings or try logging in.');
+          } else if (res.error?.includes('already registered')) {
+            setErrorMsg('This email is already registered. Please switch to "Log In" tab above.');
+          } else {
+            setErrorMsg(res.error || 'Failed to sign up');
+          }
+        }
       }
     } catch (err) {
       setErrorMsg(err.message);
@@ -111,8 +119,20 @@ export const Onboarding = () => {
             </div>
 
             {errorMsg && (
-              <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs p-3 rounded-xl">
-                {errorMsg}
+              <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs p-3 rounded-xl flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p>{errorMsg}</p>
+                  {errorMsg.includes('rate limit') && (
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode('login')}
+                      className="text-brand-300 underline font-semibold text-[11px]"
+                    >
+                      Already have an account? Click here to Log In →
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
