@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useExpenses } from '../../context/ExpenseContext';
-import { Users, UserPlus, Copy, Check, ShieldCheck, UserCheck, KeyRound, Clock } from 'lucide-react';
-import { formatDateShort } from '../../utils/formatters';
+import { Users, UserPlus, Copy, Check, MessageSquareShare, KeyRound, Share2 } from 'lucide-react';
 
 export const InviteModal = () => {
   const { members, isOwner } = useAuth();
-  const { createFamilyInvitation, invitations } = useExpenses();
+  const { createFamilyInvitation } = useExpenses();
 
   const [generatedCode, setGeneratedCode] = useState('');
   const [copied, setCopied] = useState(false);
@@ -21,10 +20,21 @@ export const InviteModal = () => {
     }
   };
 
+  const directLink = generatedCode 
+    ? `${window.location.origin}/?invite=${generatedCode}` 
+    : '';
+
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const shareViaWhatsApp = () => {
+    const text = encodeURIComponent(
+      `Hi! Join our family household expense register on Gharkharch. Click this link to join automatically: ${directLink}`
+    );
+    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
   };
 
   return (
@@ -52,30 +62,42 @@ export const InviteModal = () => {
         )}
       </div>
 
-      {/* GENERATED INVITATION CODE CARD */}
+      {/* GENERATED INVITATION CODE & WHATSAPP SHARE CARD */}
       {generatedCode && (
-        <div className="glass-panel rounded-2xl p-4 border border-brand-500/40 bg-brand-600/10 space-y-2">
+        <div className="glass-panel rounded-2xl p-4 border border-brand-500/40 bg-brand-600/10 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-brand-300 flex items-center gap-1">
               <KeyRound className="w-3.5 h-3.5" />
-              New Family Invitation Code
+              1-Click WhatsApp Invite Ready
             </span>
-            <span className="text-[10px] text-slate-400">Valid for 7 days</span>
+            <span className="text-[10px] text-slate-400">Valid 7 Days</span>
           </div>
 
-          <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-            <span className="font-mono text-lg font-bold tracking-widest text-white">{generatedCode}</span>
-            <button
-              onClick={() => copyToClipboard(generatedCode)}
-              className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors"
-            >
-              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Copied!' : 'Copy Code'}</span>
-            </button>
+          {/* 1-Click WhatsApp Share Button */}
+          <button
+            onClick={shareViaWhatsApp}
+            className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all"
+          >
+            <MessageSquareShare className="w-4 h-4 text-emerald-100" />
+            <span>Share Invite via WhatsApp</span>
+          </button>
+
+          {/* Code & Direct Link */}
+          <div className="space-y-2 pt-1 border-t border-slate-800/80">
+            <div className="flex items-center justify-between bg-slate-950 p-2 rounded-xl border border-slate-800">
+              <span className="font-mono text-sm font-bold tracking-widest text-white">{generatedCode}</span>
+              <button
+                onClick={() => copyToClipboard(directLink)}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-brand-300 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors"
+              >
+                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copied ? 'Link Copied!' : 'Copy Link'}</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400">
+              When clicked on WhatsApp, the invited person will automatically join your household upon signup!
+            </p>
           </div>
-          <p className="text-[11px] text-slate-400">
-            Share this code with your family member. They can enter it during sign-up to join your household.
-          </p>
         </div>
       )}
 

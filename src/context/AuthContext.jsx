@@ -10,8 +10,27 @@ export const AuthProvider = ({ children }) => {
   const [household, setHousehold] = useState(null);
   const [members, setMembers] = useState([]);
   const [userRole, setUserRole] = useState(null); // 'owner' | 'member'
+  const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
+
+  // Auto-detect ?invite=CODE from URL query parameters (e.g. from WhatsApp link)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlInvite = params.get('invite');
+      if (urlInvite) {
+        const cleanCode = urlInvite.trim().toUpperCase();
+        sessionStorage.setItem('gharkharch_pending_invite', cleanCode);
+        setPendingInviteCode(cleanCode);
+      } else {
+        const savedCode = sessionStorage.getItem('gharkharch_pending_invite');
+        if (savedCode) setPendingInviteCode(savedCode);
+      }
+    } catch (e) {
+      console.warn('URL search parameter check:', e);
+    }
+  }, []);
 
   // Initialize session & user household context
   useEffect(() => {
@@ -131,7 +150,18 @@ export const AuthProvider = ({ children }) => {
 
         setMembers(coMembers || []);
       } else {
-        // User has no household yet (Triggers Onboarding Flow)
+        // User has no household yet — Check for pending WhatsApp invitation link!
+        const storedInvite = sessionStorage.getItem('gharkharch_pending_invite');
+        if (storedInvite) {
+          console.log('Auto-redeeming pending WhatsApp invitation:', storedInvite);
+          const redeemRes = await autoRedeemInvite(authUser, storedInvite);
+          if (redeemRes.success) {
+            sessionStorage.removeItem('gharkharch_pending_invite');
+            setPendingInviteCode(null);
+            return;
+          }
+        }
+
         setHousehold(null);
         setUserRole(null);
         setMembers([]);
@@ -141,6 +171,48 @@ export const AuthProvider = ({ children }) => {
       setAuthError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Helper: Auto-redeem invitation code for new signup arriving via WhatsApp link
+  const autoRedeemInvite = async (authUser, inviteCode) => {
+    try {
+      const { data: invite, error: inviteErr } = await supabase
+        .from('household_invitations')
+        .select('*')
+        .eq('invite_code', inviteCode)
+        .eq('status', 'pending')
+        .gte('expires_at', new Date().toISOString())
+        .single();
+
+      if (inviteErr || !invite) return { success: false };
+
+      const { error: joinErr } = await supabase
+        .from('household_members')
+        .insert({
+          household_id: invite.household_id,
+          user_id: authUser.id,
+          role: 'member',
+        });
+
+      if (joinErr && !joinErr.message.includes('duplicate')) return { success: false };
+
+      // Load household data directly
+      const { data: hhData } = await supabase
+        .from('households')
+        .select('*')
+        .eq('id', invite.household_id)
+        .single();
+
+      if (hhData) {
+        setHousehold(hhData);
+        setUserRole('member');
+        return { success: true };
+      }
+      return { success: false };
+    } catch (e) {
+      console.error('Auto redeem invite failed:', e);
+      return { success: false };
     }
   };
 
@@ -161,7 +233,6 @@ export const AuthProvider = ({ children }) => {
     try {
       setLoading(true);
 
-      // Step A: Ensure profile exists in public.profiles table first
       const { data: existingProf } = await supabase.from('profiles').select('id').eq('id', user.id).single();
       if (!existingProf) {
         await supabase.from('profiles').upsert({
@@ -171,10 +242,8 @@ export const AuthProvider = ({ children }) => {
         });
       }
 
-      // Generate v4 UUID for household so RLS SELECT timing never blocks insertion
       const householdId = crypto.randomUUID();
 
-      // Step B: Insert household
       const { error: hhErr } = await supabase
         .from('households')
         .insert({
@@ -185,7 +254,6 @@ export const AuthProvider = ({ children }) => {
 
       if (hhErr) throw hhErr;
 
-      // Step C: Add creator as Owner in household_members
       const { error: memErr } = await supabase
         .from('household_members')
         .insert({
@@ -196,7 +264,6 @@ export const AuthProvider = ({ children }) => {
 
       if (memErr) throw memErr;
 
-      // Step D: Seed default household categories
       const categoriesToInsert = DEFAULT_CATEGORIES.map(cat => ({
         household_id: householdId,
         name: cat.name,
@@ -206,7 +273,6 @@ export const AuthProvider = ({ children }) => {
       }));
       await supabase.from('categories').insert(categoriesToInsert);
 
-      // Step E: Seed default household payment modes
       const paymentModesToInsert = DEFAULT_PAYMENT_MODES.map(pm => ({
         household_id: householdId,
         name: pm.name,
@@ -222,11 +288,10 @@ export const AuthProvider = ({ children }) => {
         created_at: new Date().toISOString(),
       };
 
-      // Set active household & owner role directly in local state for instant transition
       setHousehold(createdHH);
       setUserRole('owner');
+      sessionStorage.removeItem('gharkharch_pending_invite');
 
-      // Refresh background user context
       await loadUserData(user);
       return { success: true, household: createdHH };
     } catch (err) {
@@ -250,7 +315,6 @@ export const AuthProvider = ({ children }) => {
     try {
       setLoading(true);
 
-      // Ensure profile exists
       const { data: existingProf } = await supabase.from('profiles').select('id').eq('id', user.id).single();
       if (!existingProf) {
         await supabase.from('profiles').upsert({
@@ -260,7 +324,6 @@ export const AuthProvider = ({ children }) => {
         });
       }
 
-      // Verify invitation code
       const { data: invite, error: inviteErr } = await supabase
         .from('household_invitations')
         .select('*')
@@ -273,7 +336,6 @@ export const AuthProvider = ({ children }) => {
         return { success: false, error: 'Invalid or expired invitation code. Ask your household Owner for a new code.' };
       }
 
-      // Add user to household_members as 'member'
       const { error: joinErr } = await supabase
         .from('household_members')
         .insert({
@@ -285,6 +347,8 @@ export const AuthProvider = ({ children }) => {
       if (joinErr && !joinErr.message.includes('duplicate')) {
         throw joinErr;
       }
+
+      sessionStorage.removeItem('gharkharch_pending_invite');
 
       await loadUserData(user);
       return { success: true };
@@ -305,7 +369,7 @@ export const AuthProvider = ({ children }) => {
       setUserRole('owner');
       return { success: true };
     }
-    const { data, error } = await supabase.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { success: false, error: error.message };
     return { success: true, data };
   };
@@ -339,6 +403,7 @@ export const AuthProvider = ({ children }) => {
     setHousehold(null);
     setMembers([]);
     setUserRole(null);
+    sessionStorage.removeItem('gharkharch_pending_invite');
   };
 
   return (
@@ -349,6 +414,7 @@ export const AuthProvider = ({ children }) => {
         household,
         members,
         userRole,
+        pendingInviteCode,
         isOwner: userRole === 'owner',
         isMember: Boolean(userRole),
         loading,

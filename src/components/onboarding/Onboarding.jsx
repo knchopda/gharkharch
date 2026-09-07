@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { BookOpen, Home, KeyRound, UserPlus, LogIn, Sparkles, CheckCircle2, ArrowRight, AlertCircle } from 'lucide-react';
+import { BookOpen, Home, KeyRound, UserPlus, LogIn, Sparkles, CheckCircle2, ArrowRight, AlertCircle, MessageSquareShare } from 'lucide-react';
 import { isSupabaseConfigured } from '../../lib/supabase';
 
 export const Onboarding = () => {
-  const { user, loginWithEmail, signupWithEmail, createHousehold, joinHouseholdByCode } = useAuth();
+  const { user, pendingInviteCode, loginWithEmail, signupWithEmail, createHousehold, joinHouseholdByCode } = useAuth();
 
   const [authMode, setAuthMode] = useState('signup'); // 'login' | 'signup'
   const [email, setEmail] = useState('');
@@ -12,12 +12,19 @@ export const Onboarding = () => {
   const [fullName, setFullName] = useState('');
 
   // Onboarding Step 2: Household Setup Choice
-  const [setupMode, setSetupMode] = useState('create'); // 'create' | 'join'
+  const [setupMode, setSetupMode] = useState(pendingInviteCode ? 'join' : 'create');
   const [householdName, setHouseholdName] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
+  const [inviteCode, setInviteCode] = useState(pendingInviteCode || '');
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => {
+    if (pendingInviteCode) {
+      setInviteCode(pendingInviteCode);
+      setSetupMode('join');
+    }
+  }, [pendingInviteCode]);
 
   // Handle Authentication submit
   const handleAuthSubmit = async (e) => {
@@ -96,6 +103,19 @@ export const Onboarding = () => {
           <h1 className="font-outfit text-3xl font-extrabold tracking-tight text-white">Gharkharch</h1>
           <p className="text-slate-400 text-sm font-medium">Digital Household Expense Register</p>
         </div>
+
+        {/* WhatsApp Invite Banner */}
+        {pendingInviteCode && (
+          <div className="bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 text-xs p-3.5 rounded-2xl flex items-center gap-2.5 shadow-lg shadow-emerald-500/10">
+            <MessageSquareShare className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div>
+              <p className="font-bold text-white">WhatsApp Household Invitation Detected!</p>
+              <p className="text-emerald-300/80 text-[11px]">
+                Sign up or log in below to automatically join your family's household.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Step Container */}
         {!user ? (
@@ -180,7 +200,7 @@ export const Onboarding = () => {
                 disabled={loading}
                 className="w-full py-3 bg-brand-600 hover:bg-brand-500 text-white font-semibold text-sm rounded-xl transition-all shadow-lg shadow-brand-600/30 flex items-center justify-center space-x-2 disabled:opacity-50"
               >
-                <span>{loading ? 'Processing...' : authMode === 'signup' ? 'Create Account' : 'Sign In'}</span>
+                <span>{loading ? 'Processing...' : authMode === 'signup' ? 'Create Account & Join' : 'Sign In & Join'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
