@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Gharkharch</string>
+    <string name="title_activity_main">Gharkharch</string>
+    <string name="package_name">com.gharkharch.app</string>
+    <string name="custom_url_scheme">com.gharkharch.app</string>
+</resources>
