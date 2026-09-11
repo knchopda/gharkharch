@@ -1,3 +1,6 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { useAuth } from './AuthContext';
 import { 
   SAMPLE_EXPENSES, 
   SAMPLE_CATEGORIES, 
