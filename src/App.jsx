@@ -14,6 +14,7 @@ import { BookOpen } from 'lucide-react';
 const AppContent = () => {
   const { user, household, loading } = useAuth();
   const [activeTab, setActiveTab] = useState('home');
+  const [moreSection, setMoreSection] = useState('menu');
 
   // Add / Edit Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -45,6 +46,11 @@ const AppContent = () => {
     setIsAddModalOpen(true);
   };
 
+  const handleNavigateToReminders = () => {
+    setMoreSection('reminders');
+    setActiveTab('more');
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased relative">
       
@@ -57,6 +63,7 @@ const AppContent = () => {
           <Dashboard
             onOpenAddModal={handleOpenAddModal}
             onNavigateToLedger={() => setActiveTab('ledger')}
+            onNavigateToReminders={handleNavigateToReminders}
           />
         )}
 
@@ -71,7 +78,7 @@ const AppContent = () => {
         )}
 
         {activeTab === 'more' && (
-          <MoreTab />
+          <MoreTab initialSection={moreSection} />
         )}
       </main>
 

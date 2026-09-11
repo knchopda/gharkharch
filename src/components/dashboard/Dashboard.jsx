@@ -1,12 +1,27 @@
 import React from 'react';
 import { useExpenses } from '../../context/ExpenseContext';
 import { formatCurrency, formatMonthYearHeader, formatDateShort } from '../../utils/formatters';
-import { Wallet, Calendar, TrendingUp, Plus, ArrowUpRight, Tag } from 'lucide-react';
+import { Wallet, Calendar, TrendingUp, Plus, ArrowUpRight, Tag, Bell, AlertTriangle, Clock, ChevronRight } from 'lucide-react';
 
-export const Dashboard = ({ onOpenAddModal, onNavigateToLedger }) => {
-  const { expenses, categories, selectedYear, selectedMonth, getFilteredExpenses } = useExpenses();
+export const Dashboard = ({ onOpenAddModal, onNavigateToLedger, onNavigateToReminders }) => {
+  const { expenses, categories, reminders, selectedYear, selectedMonth, getFilteredExpenses } = useExpenses();
 
   const monthlyExpenses = getFilteredExpenses();
+
+  // Check for Urgent Expirations (Overdue or due in <= 7 days)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const urgentReminders = (reminders || []).filter(r => {
+    if (r.status !== 'active') return false;
+    const due = new Date(r.due_date);
+    due.setHours(0, 0, 0, 0);
+    const diffTime = due - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays <= 7;
+  });
+
+  const overdueCount = urgentReminders.filter(r => new Date(r.due_date) < today).length;
 
   // 1. Current Month Total
   const currentMonthTotal = monthlyExpenses.reduce((sum, item) => sum + Number(item.amount), 0);
@@ -33,6 +48,45 @@ export const Dashboard = ({ onOpenAddModal, onNavigateToLedger }) => {
   return (
     <div className="space-y-4 pb-32 px-3.5 pt-3.5 max-w-md mx-auto">
       
+      {/* EXPIRY WARNING BANNER (HIGH PRIORITY) */}
+      {urgentReminders.length > 0 && (
+        <div className="glass-panel p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/80 via-slate-900 to-rose-950/70 border border-amber-500/40 shadow-xl space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse">
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-outfit text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <span>Document & Renewal Warning</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-[10px] text-amber-300">
+                    {urgentReminders.length} Urgent
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-300 mt-0.5">
+                  {overdueCount > 0
+                    ? `⚠️ You have ${overdueCount} overdue item(s) and ${urgentReminders.length - overdueCount} expiring within 7 days!`
+                    : `You have ${urgentReminders.length} document/subscription item(s) expiring within 7 days!`}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
+            <div className="text-[10px] text-slate-400 font-medium truncate max-w-[200px]">
+              Next: <span className="font-bold text-white">{urgentReminders[0]?.title}</span> ({formatDateShort(urgentReminders[0]?.due_date)})
+            </div>
+            <button
+              onClick={onNavigateToReminders}
+              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1 shrink-0"
+            >
+              <span>Manage Renewals</span>
+              <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* EXECUTIVE STATS CARDS */}
       <div className="grid grid-cols-2 gap-3">
         

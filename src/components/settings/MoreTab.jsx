@@ -7,17 +7,29 @@ import { CategoryManager } from '../categories/CategoryManager';
 import { PaymentModeManager } from '../paymentModes/PaymentModeManager';
 import { InviteModal } from '../members/InviteModal';
 import { TrashManager } from '../trash/TrashManager';
-import { Users, Tag, CreditCard, Trash2, Download, LogOut, Shield, Database, ChevronRight, Home } from 'lucide-react';
+import { ReminderManager } from '../reminders/ReminderManager';
+import { Users, Tag, CreditCard, Trash2, Download, LogOut, Shield, Database, ChevronRight, Home, Bell, Clock } from 'lucide-react';
 
-export const MoreTab = () => {
+export const MoreTab = ({ initialSection = 'menu' }) => {
   const { user, profile, household, userRole, isOwner, logout } = useAuth();
-  const { expenses } = useExpenses();
+  const { expenses, reminders } = useExpenses();
 
-  const [activeSection, setActiveSection] = useState('menu'); // 'menu' | 'members' | 'categories' | 'paymentModes' | 'trash'
+  const [activeSection, setActiveSection] = useState(initialSection); // 'menu' | 'members' | 'categories' | 'paymentModes' | 'trash' | 'reminders'
 
   const handleExportAll = () => {
     exportExpensesToCSV(expenses, `Gharkharch_Full_Ledger_Backup.csv`);
   };
+
+  // Urgent reminder count
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const urgentRemindersCount = (reminders || []).filter(r => {
+    if (r.status !== 'active') return false;
+    const due = new Date(r.due_date);
+    due.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+    return diffDays <= 7;
+  }).length;
 
   return (
     <div className="space-y-4 pb-32 px-3.5 pt-3.5 max-w-md mx-auto">
@@ -68,6 +80,35 @@ export const MoreTab = () => {
       {activeSection === 'menu' ? (
         <div className="space-y-2">
           
+          {/* Option 0: RENEWALS & DOCUMENT REMINDERS (FEATURED & NEW) */}
+          <button
+            onClick={() => setActiveSection('reminders')}
+            className="w-full glass-panel rounded-xl p-3.5 border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-slate-900 to-orange-500/10 hover:border-amber-400 text-left flex items-center justify-between transition-colors relative"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/40 relative">
+                <Bell className="w-5 h-5" />
+                {urgentRemindersCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-rose-500 text-[9px] font-bold text-white flex items-center justify-center animate-ping" />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-bold text-white">Renewals & Document Reminders</p>
+                  <span className="px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 font-extrabold text-[9px] uppercase">
+                    New
+                  </span>
+                </div>
+                <p className="text-[10px] text-amber-300/90 font-medium">
+                  {urgentRemindersCount > 0 
+                    ? `⚠️ ${urgentRemindersCount} document(s) expiring soon!`
+                    : 'PUC, Insurance, Software & Mediclaim'}
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-amber-400" />
+          </button>
+
           {/* Option 1: Family Members */}
           <button
             onClick={() => setActiveSection('members')}
@@ -168,13 +209,16 @@ export const MoreTab = () => {
       ) : (
         /* SUB-SECTION VIEWS WITH BACK BUTTON */
         <div className="space-y-4">
-          <button
-            onClick={() => setActiveSection('menu')}
-            className="text-xs text-brand-400 hover:underline font-semibold flex items-center gap-1"
-          >
-            ← Back to More Menu
-          </button>
+          {activeSection !== 'reminders' && (
+            <button
+              onClick={() => setActiveSection('menu')}
+              className="text-xs text-brand-400 hover:underline font-semibold flex items-center gap-1"
+            >
+              ← Back to More Menu
+            </button>
+          )}
 
+          {activeSection === 'reminders' && <ReminderManager onBack={() => setActiveSection('menu')} />}
           {activeSection === 'members' && <InviteModal />}
           {activeSection === 'categories' && <CategoryManager />}
           {activeSection === 'paymentModes' && <PaymentModeManager />}

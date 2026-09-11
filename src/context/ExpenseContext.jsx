@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from './AuthContext';
-import { SAMPLE_EXPENSES, SAMPLE_CATEGORIES, SAMPLE_PAYMENT_MODES } from '../lib/mockData';
+import { SAMPLE_EXPENSES, SAMPLE_CATEGORIES, SAMPLE_PAYMENT_MODES, SAMPLE_REMINDERS } from '../lib/mockData';
 import { generateInviteCode } from '../utils/formatters';
 
 const ExpenseContext = createContext();
@@ -18,6 +18,7 @@ export const ExpenseProvider = ({ children }) => {
   const [categories, setCategories] = useState([]);
   const [paymentModes, setPaymentModes] = useState([]);
   const [invitations, setInvitations] = useState([]);
+  const [reminders, setReminders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -27,12 +28,20 @@ export const ExpenseProvider = ({ children }) => {
   const [selectedMemberFilter, setSelectedMemberFilter] = useState('ALL');
   const [selectedPaymentModeFilter, setSelectedPaymentModeFilter] = useState('ALL');
 
+  // Request browser notification permission on mount if available
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
   // Load data whenever household or active month changes
   useEffect(() => {
     if (!household) {
       setExpenses([]);
       setCategories([]);
       setPaymentModes([]);
+      setReminders([]);
       setLoading(false);
       return;
     }
@@ -48,6 +57,7 @@ export const ExpenseProvider = ({ children }) => {
       // Local fallback dataset for instant preview
       setCategories(SAMPLE_CATEGORIES);
       setPaymentModes(SAMPLE_PAYMENT_MODES);
+      setReminders(SAMPLE_REMINDERS);
       
       const enrichExpense = (exp) => ({
         ...exp,
@@ -86,7 +96,43 @@ export const ExpenseProvider = ({ children }) => {
       if (pmErr) throw pmErr;
       setPaymentModes(pmData || []);
 
-      // 3. Fetch Active Expenses (is_deleted = false)
+      // 3. Fetch Reminders / Expiry Register
+      const { data: remData, error: remErr } = await supabase
+        .from('reminders')
+        .select('*')
+        .eq('household_id', household.id)
+        .order('due_date', { ascending: true });
+
+      if (remErr) {
+        console.warn('Reminders table might not be patched yet:', remErr.message);
+      } else {
+        setReminders(remData || []);
+        
+        // Trigger browser notification for urgent items (< 7 days) if permitted
+        if ('Notification' in window && Notification.permission === 'granted' && remData) {
+          const now = new Date();
+          now.setHours(0, 0, 0, 0);
+          const urgent = remData.filter(r => {
+            if (r.status !== 'active') return false;
+            const due = new Date(r.due_date);
+            const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+            return diffDays >= 0 && diffDays <= 7;
+          });
+
+          if (urgent.length > 0) {
+            try {
+              new Notification('Gharkharch Expiry Reminder 🔔', {
+                body: `You have ${urgent.length} document/renewal item(s) expiring within 7 days!`,
+                icon: '/icon-192.png',
+              });
+            } catch (e) {
+              // Ignore notification errors in unsupported webview environments
+            }
+          }
+        }
+      }
+
+      // 4. Fetch Active Expenses (is_deleted = false)
       const { data: expData, error: expErr } = await supabase
         .from('expenses')
         .select('*, category:categories(*), profile:profiles!created_by(*)')
@@ -104,7 +150,7 @@ export const ExpenseProvider = ({ children }) => {
 
       setExpenses(enrichedExp);
 
-      // 4. Fetch Soft-Deleted Expenses (Owner ONLY for Trash Bin)
+      // 5. Fetch Soft-Deleted Expenses (Owner ONLY for Trash Bin)
       if (isOwner) {
         const { data: delData } = await supabase
           .from('expenses')
@@ -561,6 +607,166 @@ export const ExpenseProvider = ({ children }) => {
     }
   };
 
+  // ----------------------------------------------------------------------------
+  // REMINDERS & RENEWALS MANAGEMENT
+  // ----------------------------------------------------------------------------
+  const addReminder = async (payload) => {
+    if (!payload.title || !payload.title.trim()) {
+      return { success: false, error: 'Please enter a reminder title.' };
+    }
+    if (!payload.due_date) {
+      return { success: false, error: 'Please select a due date.' };
+    }
+
+    const item = {
+      household_id: household.id,
+      title: payload.title.trim(),
+      category_type: payload.category_type || 'other',
+      due_date: payload.due_date,
+      estimated_cost: parseFloat(payload.estimated_cost) || 0,
+      reminder_days_before: parseInt(payload.reminder_days_before) || 7,
+      notes: payload.notes ? payload.notes.trim() : null,
+      status: 'active',
+      created_by: user.id,
+    };
+
+    if (!isSupabaseConfigured) {
+      const newRem = {
+        ...item,
+        id: `rem_${Date.now()}`,
+        created_at: new Date().toISOString(),
+      };
+      setReminders(prev => [...prev, newRem].sort((a, b) => new Date(a.due_date) - new Date(b.due_date)));
+      return { success: true };
+    }
+
+    try {
+      const { data, error: insertErr } = await supabase
+        .from('reminders')
+        .insert(item)
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      setReminders(prev => [...prev, data].sort((a, b) => new Date(a.due_date) - new Date(b.due_date)));
+      return { success: true };
+    } catch (err) {
+      console.error('Error adding reminder:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
+  const updateReminder = async (id, updatePayload) => {
+    if (!updatePayload.title || !updatePayload.title.trim()) {
+      return { success: false, error: 'Please enter a reminder title.' };
+    }
+
+    const item = {
+      title: updatePayload.title.trim(),
+      category_type: updatePayload.category_type || 'other',
+      due_date: updatePayload.due_date,
+      estimated_cost: parseFloat(updatePayload.estimated_cost) || 0,
+      reminder_days_before: parseInt(updatePayload.reminder_days_before) || 7,
+      notes: updatePayload.notes ? updatePayload.notes.trim() : null,
+    };
+
+    if (!isSupabaseConfigured) {
+      setReminders(prev =>
+        prev
+          .map(r => (r.id === id ? { ...r, ...item } : r))
+          .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
+      );
+      return { success: true };
+    }
+
+    try {
+      const { data, error: updateErr } = await supabase
+        .from('reminders')
+        .update(item)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (updateErr) throw updateErr;
+
+      setReminders(prev =>
+        prev
+          .map(r => (r.id === id ? data : r))
+          .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
+      );
+      return { success: true };
+    } catch (err) {
+      console.error('Error updating reminder:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
+  const deleteReminder = async (id) => {
+    if (!isSupabaseConfigured) {
+      setReminders(prev => prev.filter(r => r.id !== id));
+      return { success: true };
+    }
+
+    try {
+      const { error: delErr } = await supabase
+        .from('reminders')
+        .delete()
+        .eq('id', id);
+
+      if (delErr) throw delErr;
+
+      setReminders(prev => prev.filter(r => r.id !== id));
+      return { success: true };
+    } catch (err) {
+      console.error('Error deleting reminder:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
+  // 1-Click Renew Action: advances due date (+1 year, +6 months, or +1 month) and optionally logs an expense
+  const renewReminder = async (id, advanceYears = 1, logExpense = false, paymentMode = 'Cash') => {
+    const target = reminders.find(r => r.id === id);
+    if (!target) return { success: false, error: 'Reminder item not found.' };
+
+    const currentDueDate = new Date(target.due_date);
+    const nextDueDate = new Date(currentDueDate);
+    nextDueDate.setFullYear(nextDueDate.getFullYear() + advanceYears);
+    const newDueDateStr = nextDueDate.toISOString().split('T')[0];
+
+    // Optionally log expense
+    if (logExpense && target.estimated_cost > 0) {
+      // Find suitable category or default to Miscellaneous / Transport
+      let matchingCat = categories.find(c => {
+        const name = c.name.toLowerCase();
+        if (target.category_type === 'vehicle_puc' && (name.includes('transport') || name.includes('vehicle') || name.includes('car'))) return true;
+        if (target.category_type === 'health_mediclaim' && (name.includes('medicine') || name.includes('health'))) return true;
+        if (target.category_type === 'household_bill' && (name.includes('electricity') || name.includes('utility'))) return true;
+        return false;
+      });
+
+      if (!matchingCat && categories.length > 0) {
+        matchingCat = categories[0];
+      }
+
+      if (matchingCat) {
+        await addExpense({
+          category_id: matchingCat.id,
+          amount: target.estimated_cost,
+          description: `Renewal: ${target.title}`,
+          expense_date: new Date().toISOString().split('T')[0],
+          payment_mode: paymentMode,
+          notes: target.notes ? `Auto-logged on renewal. ${target.notes}` : 'Auto-logged on renewal.',
+        });
+      }
+    }
+
+    return await updateReminder(id, {
+      ...target,
+      due_date: newDueDateStr,
+    });
+  };
+
   // Filtered Expenses Computation
   const getFilteredExpenses = () => {
     return expenses.filter(exp => {
@@ -607,6 +813,7 @@ export const ExpenseProvider = ({ children }) => {
         paymentModes,
         activePaymentModes: paymentModes.filter(pm => pm.is_active),
         invitations,
+        reminders,
         selectedYear,
         selectedMonth,
         loading,
@@ -630,6 +837,10 @@ export const ExpenseProvider = ({ children }) => {
         addPaymentMode,
         toggleArchivePaymentMode,
         createFamilyInvitation,
+        addReminder,
+        updateReminder,
+        deleteReminder,
+        renewReminder,
         getFilteredExpenses,
         refreshData: fetchHouseholdData,
       }}
@@ -646,3 +857,4 @@ export const useExpenses = () => {
   }
   return context;
 };
+

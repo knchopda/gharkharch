@@ -24,6 +24,9 @@ export const formatDateShort = (dateStr) => {
   });
 };
 
+export const formatDate = formatDateShort;
+
+
 export const formatDateGroupHeader = (dateStr) => {
   if (!dateStr) return '';
   const date = new Date(dateStr);

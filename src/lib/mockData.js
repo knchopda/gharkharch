@@ -60,3 +60,47 @@ export const SAMPLE_PAYMENT_MODES = DEFAULT_PAYMENT_MODES.map(pm => ({
 
 // Clean expense register with ZERO dummy expense records
 export const SAMPLE_EXPENSES = [];
+
+// Sample Reminders for Local Mock Mode
+export const SAMPLE_REMINDERS = [
+  {
+    id: 'rem_1',
+    household_id: 'hh_clean_household',
+    title: 'Car Vehicle PUC Certificate',
+    category_type: 'vehicle_puc',
+    due_date: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 4 days from now
+    estimated_cost: 150.00,
+    reminder_days_before: 7,
+    notes: 'Check emissions center near main highway junction',
+    status: 'active',
+    created_by: 'usr_owner_001',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'rem_2',
+    household_id: 'hh_clean_household',
+    title: 'Antivirus & System Protection License',
+    category_type: 'software_renewal',
+    due_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 14 days from now
+    estimated_cost: 1299.00,
+    reminder_days_before: 7,
+    notes: 'Auto-renew or upgrade 3-device family pack',
+    status: 'active',
+    created_by: 'usr_owner_001',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'rem_3',
+    household_id: 'hh_clean_household',
+    title: 'Family Health Mediclaim Policy',
+    category_type: 'health_mediclaim',
+    due_date: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 45 days from now
+    estimated_cost: 18500.00,
+    reminder_days_before: 15,
+    notes: 'Star Health Family Optima Policy #9823471',
+    status: 'active',
+    created_by: 'usr_owner_001',
+    created_at: new Date().toISOString(),
+  }
+];
+

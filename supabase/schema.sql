@@ -248,3 +248,40 @@ CREATE POLICY "Members view active expenses, Owners view all" ON public.expenses
 CREATE POLICY "Members can create expenses" ON public.expenses FOR INSERT TO authenticated WITH CHECK (public.is_household_member(household_id) AND created_by = auth.uid());
 CREATE POLICY "Owner updates any, Member updates own expense" ON public.expenses FOR UPDATE TO authenticated USING (public.is_household_member(household_id) AND (public.is_household_owner(household_id) OR created_by = auth.uid()));
 CREATE POLICY "Owner only hard delete" ON public.expenses FOR DELETE TO authenticated USING (public.is_household_owner(household_id));
+
+-- ------------------------------------------------------------------------------
+-- 8. REMINDERS & RENEWALS REGISTER TABLE
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.reminders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id UUID NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  category_type VARCHAR(50) DEFAULT 'other' CHECK (
+    category_type IN ('vehicle_puc', 'insurance', 'software_renewal', 'health_mediclaim', 'household_bill', 'other')
+  ),
+  due_date DATE NOT NULL,
+  estimated_cost NUMERIC(12, 2) DEFAULT 0.00 CHECK (estimated_cost >= 0),
+  reminder_days_before INT DEFAULT 7 CHECK (reminder_days_before >= 1),
+  notes TEXT,
+  status VARCHAR(50) DEFAULT 'active' CHECK (status IN ('active', 'renewed', 'archived')),
+  created_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_reminders_household_id ON public.reminders(household_id);
+CREATE INDEX IF NOT EXISTS idx_reminders_due_date ON public.reminders(due_date ASC);
+CREATE INDEX IF NOT EXISTS idx_reminders_status ON public.reminders(status);
+
+DROP TRIGGER IF EXISTS trigger_reminders_updated_at ON public.reminders;
+CREATE TRIGGER trigger_reminders_updated_at
+  BEFORE UPDATE ON public.reminders
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+ALTER TABLE public.reminders ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Members view household reminders" ON public.reminders FOR SELECT TO authenticated USING (public.is_household_member(household_id));
+CREATE POLICY "Members insert reminders" ON public.reminders FOR INSERT TO authenticated WITH CHECK (public.is_household_member(household_id) AND created_by = auth.uid());
+CREATE POLICY "Members update household reminders" ON public.reminders FOR UPDATE TO authenticated USING (public.is_household_member(household_id));
+CREATE POLICY "Owners delete reminders" ON public.reminders FOR DELETE TO authenticated USING (public.is_household_owner(household_id));
+
