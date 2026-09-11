@@ -8,13 +8,14 @@ import { PaymentModeManager } from '../paymentModes/PaymentModeManager';
 import { InviteModal } from '../members/InviteModal';
 import { TrashManager } from '../trash/TrashManager';
 import { ReminderManager } from '../reminders/ReminderManager';
-import { Users, Tag, CreditCard, Trash2, Download, LogOut, Shield, Database, ChevronRight, Home, Bell, Clock } from 'lucide-react';
+import { WealthDashboard } from '../personalWealth/WealthDashboard';
+import { Users, Tag, CreditCard, Trash2, Download, LogOut, Shield, Database, ChevronRight, Home, Bell, Clock, Lock, Briefcase } from 'lucide-react';
 
 export const MoreTab = ({ initialSection = 'menu' }) => {
   const { user, profile, household, userRole, isOwner, logout } = useAuth();
   const { expenses, reminders } = useExpenses();
 
-  const [activeSection, setActiveSection] = useState(initialSection); // 'menu' | 'members' | 'categories' | 'paymentModes' | 'trash' | 'reminders'
+  const [activeSection, setActiveSection] = useState(initialSection); // 'menu' | 'members' | 'categories' | 'paymentModes' | 'trash' | 'reminders' | 'wealth'
 
   const handleExportAll = () => {
     exportExpensesToCSV(expenses, `Gharkharch_Full_Ledger_Backup.csv`);
@@ -80,7 +81,34 @@ export const MoreTab = ({ initialSection = 'menu' }) => {
       {activeSection === 'menu' ? (
         <div className="space-y-2">
           
-          {/* Option 0: RENEWALS & DOCUMENT REMINDERS (FEATURED & NEW) */}
+          {/* Option 0: OWNER ONLY - MY PRIVATE WEALTH & SALARY SUITE */}
+          {isOwner && (
+            <button
+              onClick={() => setActiveSection('wealth')}
+              className="w-full glass-panel rounded-xl p-3.5 border border-emerald-500/40 bg-gradient-to-r from-emerald-500/15 via-slate-900 to-teal-500/15 hover:border-emerald-400 text-left flex items-center justify-between transition-colors relative shadow-lg shadow-emerald-500/10"
+            >
+              <div className="flex items-center space-x-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/40">
+                  <Briefcase className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-bold text-white">My Private Wealth & Salary Suite</p>
+                    <span className="px-1.5 py-0.2 rounded bg-emerald-400 text-slate-950 font-extrabold text-[9px] uppercase flex items-center gap-0.5">
+                      <Lock className="w-2.5 h-2.5" />
+                      Owner Only
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-emerald-300/90 font-medium">
+                    Salary growth, SIPs, Net Worth & Custom Budget Ratios
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-emerald-400" />
+            </button>
+          )}
+
+          {/* Option 1: RENEWALS & DOCUMENT REMINDERS */}
           <button
             onClick={() => setActiveSection('reminders')}
             className="w-full glass-panel rounded-xl p-3.5 border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-slate-900 to-orange-500/10 hover:border-amber-400 text-left flex items-center justify-between transition-colors relative"
@@ -95,9 +123,6 @@ export const MoreTab = ({ initialSection = 'menu' }) => {
               <div>
                 <div className="flex items-center gap-1.5">
                   <p className="text-xs font-bold text-white">Renewals & Document Reminders</p>
-                  <span className="px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 font-extrabold text-[9px] uppercase">
-                    New
-                  </span>
                 </div>
                 <p className="text-[10px] text-amber-300/90 font-medium">
                   {urgentRemindersCount > 0 
@@ -209,7 +234,7 @@ export const MoreTab = ({ initialSection = 'menu' }) => {
       ) : (
         /* SUB-SECTION VIEWS WITH BACK BUTTON */
         <div className="space-y-4">
-          {activeSection !== 'reminders' && (
+          {activeSection !== 'reminders' && activeSection !== 'wealth' && (
             <button
               onClick={() => setActiveSection('menu')}
               className="text-xs text-brand-400 hover:underline font-semibold flex items-center gap-1"
@@ -218,6 +243,7 @@ export const MoreTab = ({ initialSection = 'menu' }) => {
             </button>
           )}
 
+          {activeSection === 'wealth' && <WealthDashboard onBack={() => setActiveSection('menu')} />}
           {activeSection === 'reminders' && <ReminderManager onBack={() => setActiveSection('menu')} />}
           {activeSection === 'members' && <InviteModal />}
           {activeSection === 'categories' && <CategoryManager />}

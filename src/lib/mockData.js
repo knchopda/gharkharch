@@ -104,3 +104,100 @@ export const SAMPLE_REMINDERS = [
   }
 ];
 
+// Sample Incomes for Local Mock Mode
+export const SAMPLE_INCOMES = [
+  {
+    id: 'inc_1',
+    household_id: 'hh_clean_household',
+    title: 'Monthly Salary Credit',
+    source_type: 'salary',
+    amount: 85000.00,
+    income_date: new Date().toISOString().split('T')[0],
+    notes: 'Monthly Net Take Home Salary',
+    created_by: 'usr_owner_001',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'inc_2',
+    household_id: 'hh_clean_household',
+    title: 'Freelance Software Project Bonus',
+    source_type: 'freelance',
+    amount: 15000.00,
+    income_date: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    notes: 'Mobile app consulting payout',
+    created_by: 'usr_owner_001',
+    created_at: new Date().toISOString(),
+  }
+];
+
+// Sample Investments for Local Mock Mode
+export const SAMPLE_INVESTMENTS = [
+  {
+    id: 'inv_1',
+    household_id: 'hh_clean_household',
+    name: 'Nifty 50 Index Fund SIP',
+    investment_type: 'sip',
+    invested_amount: 120000.00,
+    current_value: 142500.00,
+    monthly_sip_amount: 10000.00,
+    notes: 'Monthly auto-debit on 5th',
+    created_by: 'usr_owner_001',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'inv_2',
+    household_id: 'hh_clean_household',
+    name: 'Public Provident Fund (PPF)',
+    investment_type: 'ppf_epf',
+    invested_amount: 80000.00,
+    current_value: 88500.00,
+    monthly_sip_amount: 5000.00,
+    notes: 'Tax saving 80C long term fund',
+    created_by: 'usr_owner_001',
+    created_at: new Date().toISOString(),
+  }
+];
+
+// Sample Savings Goals for Local Mock Mode
+export const SAMPLE_SAVINGS_GOALS = [
+  {
+    id: 'goal_1',
+    household_id: 'hh_clean_household',
+    title: 'Emergency Reserve Fund',
+    target_amount: 150000.00,
+    current_amount: 95000.00,
+    target_date: '2026-12-31',
+    icon: 'Shield',
+    status: 'active',
+    created_by: 'usr_owner_001',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'goal_2',
+    household_id: 'hh_clean_household',
+    title: 'New M3 Laptop Upgrade',
+    target_amount: 90000.00,
+    current_amount: 45000.00,
+    target_date: '2026-11-15',
+    icon: 'Laptop',
+    status: 'active',
+    created_by: 'usr_owner_001',
+    created_at: new Date().toISOString(),
+  }
+];
+
+// Sample Category Budgets for Local Mock Mode
+export const SAMPLE_CATEGORY_BUDGETS = [
+  { id: 'cb_1', household_id: 'hh_clean_household', category_id: 'cat_1', monthly_limit: 15000.00 },
+  { id: 'cb_2', household_id: 'hh_clean_household', category_id: 'cat_6', monthly_limit: 6000.00 },
+];
+
+// Sample Dynamic Budget Ratio Settings
+export const SAMPLE_BUDGET_RATIO_SETTINGS = {
+  household_id: 'hh_clean_household',
+  needs_pct: 50,
+  wants_pct: 30,
+  savings_pct: 20,
+};
+
+

@@ -1,7 +1,14 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { useAuth } from './AuthContext';
-import { SAMPLE_EXPENSES, SAMPLE_CATEGORIES, SAMPLE_PAYMENT_MODES, SAMPLE_REMINDERS } from '../lib/mockData';
+import { 
+  SAMPLE_EXPENSES, 
+  SAMPLE_CATEGORIES, 
+  SAMPLE_PAYMENT_MODES, 
+  SAMPLE_REMINDERS,
+  SAMPLE_INCOMES,
+  SAMPLE_INVESTMENTS,
+  SAMPLE_SAVINGS_GOALS,
+  SAMPLE_CATEGORY_BUDGETS,
+  SAMPLE_BUDGET_RATIO_SETTINGS
+} from '../lib/mockData';
 import { generateInviteCode } from '../utils/formatters';
 
 const ExpenseContext = createContext();
@@ -19,6 +26,14 @@ export const ExpenseProvider = ({ children }) => {
   const [paymentModes, setPaymentModes] = useState([]);
   const [invitations, setInvitations] = useState([]);
   const [reminders, setReminders] = useState([]);
+  
+  // Owner Private Wealth Suite State
+  const [incomes, setIncomes] = useState([]);
+  const [investments, setInvestments] = useState([]);
+  const [savingsGoals, setSavingsGoals] = useState([]);
+  const [categoryBudgets, setCategoryBudgets] = useState([]);
+  const [budgetRatioSettings, setBudgetRatioSettings] = useState({ needs_pct: 50, wants_pct: 30, savings_pct: 20 });
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -42,6 +57,10 @@ export const ExpenseProvider = ({ children }) => {
       setCategories([]);
       setPaymentModes([]);
       setReminders([]);
+      setIncomes([]);
+      setInvestments([]);
+      setSavingsGoals([]);
+      setCategoryBudgets([]);
       setLoading(false);
       return;
     }
@@ -58,6 +77,11 @@ export const ExpenseProvider = ({ children }) => {
       setCategories(SAMPLE_CATEGORIES);
       setPaymentModes(SAMPLE_PAYMENT_MODES);
       setReminders(SAMPLE_REMINDERS);
+      setIncomes(SAMPLE_INCOMES);
+      setInvestments(SAMPLE_INVESTMENTS);
+      setSavingsGoals(SAMPLE_SAVINGS_GOALS);
+      setCategoryBudgets(SAMPLE_CATEGORY_BUDGETS);
+      setBudgetRatioSettings(SAMPLE_BUDGET_RATIO_SETTINGS);
       
       const enrichExpense = (exp) => ({
         ...exp,
@@ -104,32 +128,9 @@ export const ExpenseProvider = ({ children }) => {
         .order('due_date', { ascending: true });
 
       if (remErr) {
-        console.warn('Reminders table might not be patched yet:', remErr.message);
+        console.warn('Reminders table warning:', remErr.message);
       } else {
         setReminders(remData || []);
-        
-        // Trigger browser notification for urgent items (< 7 days) if permitted
-        if ('Notification' in window && Notification.permission === 'granted' && remData) {
-          const now = new Date();
-          now.setHours(0, 0, 0, 0);
-          const urgent = remData.filter(r => {
-            if (r.status !== 'active') return false;
-            const due = new Date(r.due_date);
-            const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
-            return diffDays >= 0 && diffDays <= 7;
-          });
-
-          if (urgent.length > 0) {
-            try {
-              new Notification('Gharkharch Expiry Reminder 🔔', {
-                body: `You have ${urgent.length} document/renewal item(s) expiring within 7 days!`,
-                icon: '/icon-192.png',
-              });
-            } catch (e) {
-              // Ignore notification errors in unsupported webview environments
-            }
-          }
-        }
       }
 
       // 4. Fetch Active Expenses (is_deleted = false)
@@ -150,7 +151,7 @@ export const ExpenseProvider = ({ children }) => {
 
       setExpenses(enrichedExp);
 
-      // 5. Fetch Soft-Deleted Expenses (Owner ONLY for Trash Bin)
+      // 5. Owner ONLY: Fetch Soft-Deleted Expenses, Invitations, & Personal Wealth Datasets
       if (isOwner) {
         const { data: delData } = await supabase
           .from('expenses')
@@ -169,6 +170,51 @@ export const ExpenseProvider = ({ children }) => {
           .eq('status', 'pending');
 
         setInvitations(inviteData || []);
+
+        // Load Incomes
+        const { data: incData } = await supabase
+          .from('incomes')
+          .select('*')
+          .eq('household_id', household.id)
+          .order('income_date', { ascending: false });
+        setIncomes(incData || []);
+
+        // Load Investments
+        const { data: invData } = await supabase
+          .from('investments')
+          .select('*')
+          .eq('household_id', household.id)
+          .order('created_at', { ascending: false });
+        setInvestments(invData || []);
+
+        // Load Savings Goals
+        const { data: goalData } = await supabase
+          .from('savings_goals')
+          .select('*')
+          .eq('household_id', household.id)
+          .order('created_at', { ascending: false });
+        setSavingsGoals(goalData || []);
+
+        // Load Category Budgets
+        const { data: budData } = await supabase
+          .from('category_budgets')
+          .select('*')
+          .eq('household_id', household.id);
+        setCategoryBudgets(budData || []);
+
+        // Load Dynamic Budget Ratio Settings
+        const { data: ratioData } = await supabase
+          .from('budget_ratio_settings')
+          .select('*')
+          .eq('household_id', household.id)
+          .maybeSingle();
+        if (ratioData) {
+          setBudgetRatioSettings({
+            needs_pct: ratioData.needs_pct,
+            wants_pct: ratioData.wants_pct,
+            savings_pct: ratioData.savings_pct,
+          });
+        }
       }
     } catch (err) {
       console.error('Error fetching expense ledger data:', err);
@@ -767,6 +813,312 @@ export const ExpenseProvider = ({ children }) => {
     });
   };
 
+  // ----------------------------------------------------------------------------
+  // OWNER PRIVATE WEALTH & SALARY SUITE MANAGEMENT (OWNER ONLY)
+  // ----------------------------------------------------------------------------
+  const addIncome = async (payload) => {
+    if (!isOwner) return { success: false, error: 'Only Household Owner can log personal salary/income.' };
+    if (!payload.title || !payload.title.trim()) return { success: false, error: 'Please enter an income title.' };
+    const amountVal = parseFloat(payload.amount);
+    if (isNaN(amountVal) || amountVal <= 0) return { success: false, error: 'Please enter a valid income amount.' };
+
+    const item = {
+      household_id: household.id,
+      title: payload.title.trim(),
+      source_type: payload.source_type || 'salary',
+      amount: amountVal,
+      income_date: payload.income_date || new Date().toISOString().split('T')[0],
+      notes: payload.notes ? payload.notes.trim() : null,
+      created_by: user.id,
+    };
+
+    if (!isSupabaseConfigured) {
+      const newInc = { ...item, id: `inc_${Date.now()}`, created_at: new Date().toISOString() };
+      setIncomes(prev => [newInc, ...prev].sort((a, b) => new Date(b.income_date) - new Date(a.income_date)));
+      return { success: true };
+    }
+
+    try {
+      const { data, error: err } = await supabase.from('incomes').insert(item).select().single();
+      if (err) throw err;
+      setIncomes(prev => [data, ...prev].sort((a, b) => new Date(b.income_date) - new Date(a.income_date)));
+      return { success: true };
+    } catch (err) {
+      console.error('Error adding income:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
+  const updateIncome = async (id, payload) => {
+    if (!isOwner) return { success: false, error: 'Only Household Owner can update income records.' };
+    const amountVal = parseFloat(payload.amount);
+    if (isNaN(amountVal) || amountVal <= 0) return { success: false, error: 'Please enter a valid income amount.' };
+
+    const item = {
+      title: payload.title.trim(),
+      source_type: payload.source_type || 'salary',
+      amount: amountVal,
+      income_date: payload.income_date,
+      notes: payload.notes ? payload.notes.trim() : null,
+    };
+
+    if (!isSupabaseConfigured) {
+      setIncomes(prev => prev.map(i => (i.id === id ? { ...i, ...item } : i)));
+      return { success: true };
+    }
+
+    try {
+      const { data, error: err } = await supabase.from('incomes').update(item).eq('id', id).select().single();
+      if (err) throw err;
+      setIncomes(prev => prev.map(i => (i.id === id ? data : i)));
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const deleteIncome = async (id) => {
+    if (!isOwner) return { success: false, error: 'Only Household Owner can delete income records.' };
+    if (!isSupabaseConfigured) {
+      setIncomes(prev => prev.filter(i => i.id !== id));
+      return { success: true };
+    }
+
+    try {
+      const { error: err } = await supabase.from('incomes').delete().eq('id', id);
+      if (err) throw err;
+      setIncomes(prev => prev.filter(i => i.id !== id));
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  // INVESTMENTS MANAGEMENT
+  const addInvestment = async (payload) => {
+    if (!isOwner) return { success: false, error: 'Only Household Owner can log investments.' };
+    if (!payload.name || !payload.name.trim()) return { success: false, error: 'Please enter investment name.' };
+
+    const item = {
+      household_id: household.id,
+      name: payload.name.trim(),
+      investment_type: payload.investment_type || 'mutual_fund',
+      invested_amount: parseFloat(payload.invested_amount) || 0,
+      current_value: parseFloat(payload.current_value) || 0,
+      monthly_sip_amount: parseFloat(payload.monthly_sip_amount) || 0,
+      notes: payload.notes ? payload.notes.trim() : null,
+      created_by: user.id,
+    };
+
+    if (!isSupabaseConfigured) {
+      const newInv = { ...item, id: `inv_${Date.now()}`, created_at: new Date().toISOString() };
+      setInvestments(prev => [newInv, ...prev]);
+      return { success: true };
+    }
+
+    try {
+      const { data, error: err } = await supabase.from('investments').insert(item).select().single();
+      if (err) throw err;
+      setInvestments(prev => [data, ...prev]);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const updateInvestment = async (id, payload) => {
+    if (!isOwner) return { success: false, error: 'Only Household Owner can update investments.' };
+
+    const item = {
+      name: payload.name.trim(),
+      investment_type: payload.investment_type || 'mutual_fund',
+      invested_amount: parseFloat(payload.invested_amount) || 0,
+      current_value: parseFloat(payload.current_value) || 0,
+      monthly_sip_amount: parseFloat(payload.monthly_sip_amount) || 0,
+      notes: payload.notes ? payload.notes.trim() : null,
+    };
+
+    if (!isSupabaseConfigured) {
+      setInvestments(prev => prev.map(inv => (inv.id === id ? { ...inv, ...item } : inv)));
+      return { success: true };
+    }
+
+    try {
+      const { data, error: err } = await supabase.from('investments').update(item).eq('id', id).select().single();
+      if (err) throw err;
+      setInvestments(prev => prev.map(inv => (inv.id === id ? data : inv)));
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const deleteInvestment = async (id) => {
+    if (!isOwner) return { success: false, error: 'Only Household Owner can delete investments.' };
+    if (!isSupabaseConfigured) {
+      setInvestments(prev => prev.filter(inv => inv.id !== id));
+      return { success: true };
+    }
+
+    try {
+      const { error: err } = await supabase.from('investments').delete().eq('id', id);
+      if (err) throw err;
+      setInvestments(prev => prev.filter(inv => inv.id !== id));
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  // SAVINGS GOALS MANAGEMENT
+  const addSavingsGoal = async (payload) => {
+    if (!isOwner) return { success: false, error: 'Only Household Owner can manage savings goals.' };
+    if (!payload.title || !payload.title.trim()) return { success: false, error: 'Please enter goal title.' };
+
+    const targetVal = parseFloat(payload.target_amount);
+    if (isNaN(targetVal) || targetVal <= 0) return { success: false, error: 'Please enter a valid target amount.' };
+
+    const item = {
+      household_id: household.id,
+      title: payload.title.trim(),
+      target_amount: targetVal,
+      current_amount: parseFloat(payload.current_amount) || 0,
+      target_date: payload.target_date || null,
+      icon: payload.icon || 'Target',
+      status: 'active',
+      created_by: user.id,
+    };
+
+    if (!isSupabaseConfigured) {
+      const newGoal = { ...item, id: `goal_${Date.now()}`, created_at: new Date().toISOString() };
+      setSavingsGoals(prev => [newGoal, ...prev]);
+      return { success: true };
+    }
+
+    try {
+      const { data, error: err } = await supabase.from('savings_goals').insert(item).select().single();
+      if (err) throw err;
+      setSavingsGoals(prev => [data, ...prev]);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const updateSavingsGoal = async (id, payload) => {
+    if (!isOwner) return { success: false, error: 'Only Household Owner can update goals.' };
+
+    const item = {
+      title: payload.title.trim(),
+      target_amount: parseFloat(payload.target_amount) || 0,
+      current_amount: parseFloat(payload.current_amount) || 0,
+      target_date: payload.target_date || null,
+      status: payload.status || 'active',
+    };
+
+    if (!isSupabaseConfigured) {
+      setSavingsGoals(prev => prev.map(g => (g.id === id ? { ...g, ...item } : g)));
+      return { success: true };
+    }
+
+    try {
+      const { data, error: err } = await supabase.from('savings_goals').update(item).eq('id', id).select().single();
+      if (err) throw err;
+      setSavingsGoals(prev => prev.map(g => (g.id === id ? data : g)));
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const deleteSavingsGoal = async (id) => {
+    if (!isOwner) return { success: false, error: 'Only Household Owner can delete goals.' };
+    if (!isSupabaseConfigured) {
+      setSavingsGoals(prev => prev.filter(g => g.id !== id));
+      return { success: true };
+    }
+
+    try {
+      const { error: err } = await supabase.from('savings_goals').delete().eq('id', id);
+      if (err) throw err;
+      setSavingsGoals(prev => prev.filter(g => g.id !== id));
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  // CATEGORY BUDGET CAPS & DYNAMIC RATIOS
+  const setCategoryBudget = async (categoryId, limitAmount) => {
+    if (!isOwner) return { success: false, error: 'Only Household Owner can set category budget caps.' };
+    const limit = parseFloat(limitAmount);
+
+    if (!isSupabaseConfigured) {
+      setCategoryBudgets(prev => {
+        const filtered = prev.filter(b => b.category_id !== categoryId);
+        if (limit > 0) {
+          return [...filtered, { id: `cb_${Date.now()}`, household_id: household.id, category_id: categoryId, monthly_limit: limit }];
+        }
+        return filtered;
+      });
+      return { success: true };
+    }
+
+    try {
+      if (limit <= 0) {
+        await supabase.from('category_budgets').delete().eq('household_id', household.id).eq('category_id', categoryId);
+        setCategoryBudgets(prev => prev.filter(b => b.category_id !== categoryId));
+      } else {
+        const { data, error: err } = await supabase
+          .from('category_budgets')
+          .upsert({ household_id: household.id, category_id: categoryId, monthly_limit: limit }, { onConflict: 'household_id,category_id' })
+          .select()
+          .single();
+        if (err) throw err;
+        setCategoryBudgets(prev => {
+          const filtered = prev.filter(b => b.category_id !== categoryId);
+          return [...filtered, data];
+        });
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const updateBudgetRatioSettings = async ({ needs_pct, wants_pct, savings_pct }) => {
+    if (!isOwner) return { success: false, error: 'Only Household Owner can update budget ratios.' };
+
+    const total = parseInt(needs_pct) + parseInt(wants_pct) + parseInt(savings_pct);
+    if (total !== 100) {
+      return { success: false, error: `Percentages must add up to exactly 100%! Current sum: ${total}%` };
+    }
+
+    const payload = {
+      household_id: household.id,
+      needs_pct: parseInt(needs_pct),
+      wants_pct: parseInt(wants_pct),
+      savings_pct: parseInt(savings_pct),
+      updated_at: new Date().toISOString(),
+    };
+
+    if (!isSupabaseConfigured) {
+      setBudgetRatioSettings({ needs_pct: payload.needs_pct, wants_pct: payload.wants_pct, savings_pct: payload.savings_pct });
+      return { success: true };
+    }
+
+    try {
+      const { error: err } = await supabase
+        .from('budget_ratio_settings')
+        .upsert(payload, { onConflict: 'household_id' });
+      if (err) throw err;
+      setBudgetRatioSettings({ needs_pct: payload.needs_pct, wants_pct: payload.wants_pct, savings_pct: payload.savings_pct });
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  };
+
   // Filtered Expenses Computation
   const getFilteredExpenses = () => {
     return expenses.filter(exp => {
@@ -814,6 +1166,11 @@ export const ExpenseProvider = ({ children }) => {
         activePaymentModes: paymentModes.filter(pm => pm.is_active),
         invitations,
         reminders,
+        incomes,
+        investments,
+        savingsGoals,
+        categoryBudgets,
+        budgetRatioSettings,
         selectedYear,
         selectedMonth,
         loading,
@@ -841,6 +1198,17 @@ export const ExpenseProvider = ({ children }) => {
         updateReminder,
         deleteReminder,
         renewReminder,
+        addIncome,
+        updateIncome,
+        deleteIncome,
+        addInvestment,
+        updateInvestment,
+        deleteInvestment,
+        addSavingsGoal,
+        updateSavingsGoal,
+        deleteSavingsGoal,
+        setCategoryBudget,
+        updateBudgetRatioSettings,
         getFilteredExpenses,
         refreshData: fetchHouseholdData,
       }}
@@ -857,4 +1225,5 @@ export const useExpenses = () => {
   }
   return context;
 };
+
 
